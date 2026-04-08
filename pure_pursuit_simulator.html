@@ -1,0 +1,259 @@
+<h2 class="sr-only">Interactive pure pursuit algorithm simulator for a differential drive robot</h2>
+<style>
+canvas { width: 100%; border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); cursor: crosshair; display: block; }
+.ctrls { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 12px 0 0; align-items: center; }
+.ctrl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-secondary); }
+.ctrl input[type=range] { width: 100px; }
+.ctrl .val { min-width: 36px; font-weight: 500; font-size: 13px; color: var(--color-text-primary); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin: 12px 0 0; }
+.stat { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 8px 12px; }
+.stat .lbl { font-size: 11px; color: var(--color-text-secondary); margin: 0; }
+.stat .num { font-size: 16px; font-weight: 500; margin: 2px 0 0; color: var(--color-text-primary); }
+.btns { display: flex; gap: 8px; }
+</style>
+<canvas id="cv" height="400"></canvas>
+<div class="ctrls">
+  <div class="btns">
+    <button id="btnReset" onclick="resetSim()">Reset</button>
+    <button id="btnPause" onclick="togglePause()">Pause</button>
+  </div>
+  <div class="ctrl">
+    <label>Speed v</label>
+    <input type="range" id="sV" min="20" max="200" value="80" step="5" oninput="params.v=+this.value;document.getElementById('vV').textContent=this.value">
+    <span class="val" id="vV">80</span>
+  </div>
+  <div class="ctrl">
+    <label>Track W</label>
+    <input type="range" id="sW" min="10" max="60" value="30" step="2" oninput="params.W=+this.value;document.getElementById('vW').textContent=this.value">
+    <span class="val" id="vW">30</span>
+  </div>
+</div>
+<div class="stats">
+  <div class="stat"><p class="lbl">Curvature (κ)</p><p class="num" id="stK">0.000</p></div>
+  <div class="stat"><p class="lbl">Angle (α)</p><p class="num" id="stA">0.0°</p></div>
+  <div class="stat"><p class="lbl">Distance (L)</p><p class="num" id="stL">0.0</p></div>
+  <div class="stat"><p class="lbl">ω_left</p><p class="num" id="stWL">0.0</p></div>
+  <div class="stat"><p class="lbl">ω_right</p><p class="num" id="stWR">0.0</p></div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+function resize() {
+  const r = cv.getBoundingClientRect();
+  W = cv.width = r.width * devicePixelRatio;
+  H = cv.height = 400 * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+resize();
+const dw = cv.getBoundingClientRect().width;
+const dh = 400;
+
+const params = { v: 80, W: 30, r: 5 };
+let robot = { x: dw/2, y: dh/2, theta: -Math.PI/2 };
+let goal = null;
+let trail = [];
+let paused = false;
+let arcPath = null;
+
+function resetSim() {
+  robot = { x: dw/2, y: dh/2, theta: -Math.PI/2 };
+  goal = null;
+  trail = [];
+  arcPath = null;
+}
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById('btnPause').textContent = paused ? 'Resume' : 'Pause';
+}
+
+cv.addEventListener('click', e => {
+  const rect = cv.getBoundingClientRect();
+  goal = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  trail = [];
+});
+
+// function step(dt) {
+//   if (!goal || paused) return;
+//   const dx = goal.x - robot.x;
+//   const dy = goal.y - robot.y;
+//   const dist = Math.sqrt(dx*dx + dy*dy);
+//   if (dist < 5) { goal = null; arcPath = null; return; }
+// 
+//   const localX = dx * Math.cos(-robot.theta) - dy * Math.sin(-robot.theta);
+//   const localY = dx * Math.sin(-robot.theta) + dy * Math.cos(-robot.theta);
+//   const L = Math.sqrt(localX*localX + localY*localY);
+//   const alpha = Math.atan2(localY, localX);
+// 
+//   const kappa = 2 * Math.sin(alpha) / L;
+//   const omega = params.v * kappa;
+//   const vR = params.v + omega * params.W / 2;
+//   const vL = params.v - omega * params.W / 2;
+// 
+//   document.getElementById('stK').textContent = kappa.toFixed(4);
+//   document.getElementById('stA').textContent = (alpha * 180 / Math.PI).toFixed(1) + '°';
+//   document.getElementById('stL').textContent = L.toFixed(1);
+//   document.getElementById('stWL').textContent = (vL / params.r).toFixed(1);
+//   document.getElementById('stWR').textContent = (vR / params.r).toFixed(1);
+// 
+//   if (Math.abs(kappa) > 0.0001) {
+//     const R = 1 / kappa;
+//     const cx = robot.x - R * Math.sin(robot.theta);
+//     const cy = robot.y + R * Math.cos(robot.theta);
+//     arcPath = { cx, cy, R: Math.abs(R), sign: Math.sign(R) };
+//   } else {
+//     arcPath = null;
+//   }
+// 
+//   trail.push({ x: robot.x, y: robot.y });
+//   if (trail.length > 800) trail.shift();
+// 
+//   robot.theta += omega * dt;
+//   robot.x += params.v * Math.cos(robot.theta) * dt;
+//   robot.y += params.v * Math.sin(robot.theta) * dt;
+// }
+
+function step(dt) {
+  if (!goal || paused) return;
+  const dx = goal.x - robot.x;
+  const dy = goal.y - robot.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist < 5) { goal = null; arcPath = null; return; }
+
+  const localX = dx * Math.cos(-robot.theta) - dy * Math.sin(-robot.theta);
+  const localY = dx * Math.sin(-robot.theta) + dy * Math.cos(-robot.theta);
+  const L = Math.sqrt(localX*localX + localY*localY);
+  const alpha = Math.atan2(localY, localX);
+
+  const alphaThresh = 0.05;
+  const omegaTurn   = 1.0;
+  let vL, vR;
+
+  if (Math.abs(alpha) < alphaThresh) {
+    vL = params.v;
+    vR = params.v;
+  } else {
+    const sign = alpha > 0 ? 1 : -1;
+    const wt = sign * omegaTurn * params.W / 2;
+    vL = -wt;
+    vR =  wt;
+  }
+
+  const v_fwd = (vR + vL) / 2;
+  const omega = (vR - vL) / params.W;
+
+  document.getElementById('stK').textContent = (v_fwd > 0.01 ? omega / v_fwd : 0).toFixed(4);
+  document.getElementById('stA').textContent = (alpha * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('stL').textContent = L.toFixed(1);
+  document.getElementById('stWL').textContent = (vL / params.r).toFixed(1);
+  document.getElementById('stWR').textContent = (vR / params.r).toFixed(1);
+
+  if (v_fwd > 0.01 && Math.abs(omega) > 0.0001) {
+    const R = v_fwd / omega;
+    const cx = robot.x - R * Math.sin(robot.theta);
+    const cy = robot.y + R * Math.cos(robot.theta);
+    arcPath = { cx, cy, R: Math.abs(R), sign: Math.sign(R) };
+  } else {
+    arcPath = null;
+  }
+
+  trail.push({ x: robot.x, y: robot.y });
+  if (trail.length > 800) trail.shift();
+
+  robot.theta += omega * dt;
+  robot.x += v_fwd * Math.cos(robot.theta) * dt;
+  robot.y += v_fwd * Math.sin(robot.theta) * dt;
+}
+
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const cText = dark ? '#c2c0b6' : '#3d3d3a';
+const cTextMuted = dark ? '#73726c' : '#9c9a92';
+const cGrid = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+const cTrail = dark ? 'rgba(93,202,165,0.5)' : 'rgba(29,158,117,0.5)';
+const cArc = dark ? 'rgba(175,169,236,0.4)' : 'rgba(83,74,183,0.35)';
+const cGoal = dark ? '#EF9F27' : '#BA7517';
+const cRobot = dark ? '#5DCAA5' : '#1D9E75';
+const cWheel = dark ? '#F7C1C1' : '#A32D2D';
+
+function draw() {
+  ctx.clearRect(0, 0, dw, dh);
+
+  for (let x = 0; x < dw; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, dh);
+    ctx.strokeStyle = cGrid; ctx.lineWidth = 0.5; ctx.stroke();
+  }
+  for (let y = 0; y < dh; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(dw, y);
+    ctx.strokeStyle = cGrid; ctx.lineWidth = 0.5; ctx.stroke();
+  }
+
+  if (trail.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x, trail[0].y);
+    for (let i = 1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
+    ctx.strokeStyle = cTrail; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  if (arcPath && goal) {
+    ctx.beginPath();
+    const startAngle = Math.atan2(robot.y - arcPath.cy, robot.x - arcPath.cx);
+    const endAngle = Math.atan2(goal.y - arcPath.cy, goal.x - arcPath.cx);
+    ctx.arc(arcPath.cx, arcPath.cy, arcPath.R, startAngle, endAngle, arcPath.sign < 0);
+    ctx.strokeStyle = cArc; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(arcPath.cx, arcPath.cy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = cArc; ctx.fill();
+  }
+
+  if (goal) {
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(robot.x, robot.y);
+    ctx.lineTo(goal.x, goal.y);
+    ctx.strokeStyle = cGoal; ctx.lineWidth = 1; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(goal.x, goal.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = cGoal; ctx.globalAlpha = 0.3; ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = cGoal; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = cText; ctx.font = '500 12px Anthropic Sans, sans-serif';
+    ctx.fillText('Goal', goal.x + 14, goal.y + 4);
+  }
+
+  ctx.save();
+  ctx.translate(robot.x, robot.y);
+  ctx.rotate(robot.theta);
+  ctx.beginPath();
+  ctx.moveTo(14, 0);
+  ctx.lineTo(-8, -9);
+  ctx.lineTo(-8, 9);
+  ctx.closePath();
+  ctx.fillStyle = cRobot; ctx.fill();
+  const hw = params.W / 2;
+  ctx.fillStyle = cWheel;
+  ctx.fillRect(-6, -hw - 3, 10, 4);
+  ctx.fillRect(-6, hw - 1, 10, 4);
+  ctx.restore();
+
+  if (!goal) {
+    ctx.fillStyle = cTextMuted;
+    ctx.font = '400 14px Anthropic Sans, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Click anywhere to place a goal', dw / 2, 30);
+    ctx.textAlign = 'start';
+  }
+}
+
+let last = 0;
+function loop(ts) {
+  const dt = Math.min((ts - last) / 1000, 0.05);
+  last = ts;
+  step(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(t => { last = t; loop(t); });
+</script>
