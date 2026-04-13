@@ -17,7 +17,7 @@ class RobotWorkspace:
         self.fig, self.ax = plt.subplots()
         
         self.ax.plot(self.X, self.Y, 's', markersize=10, label='Workspace Points', color='white')
-        m = MarkerStyle(marker='d', fillstyle='full')
+        m = MarkerStyle(marker='1')
         self.path_block_line, = self.ax.plot([], [], color='yellow', linestyle='--', linewidth=5)
         self.path_goal_line, = self.ax.plot([], [], color='yellow', linestyle='--', linewidth=5)
         self.point, = self.ax.plot(self.point_coords['x'], self.point_coords['y'], marker=m, markersize=40, color='red')
@@ -34,8 +34,8 @@ class RobotWorkspace:
         self.fig.canvas.mpl_connect('key_press_event', self.on_key)
     
     def initialize_workspace(self):
-        x_min, x_max = 2.5, 117.5
-        y_min, y_max = 2.5, 117.5
+        x_min, x_max = 0, 115
+        y_min, y_max = 0, 115
         
         x = np.linspace(x_min, x_max, 24)
         y = np.linspace(y_min, y_max, 24)
@@ -51,6 +51,31 @@ class RobotWorkspace:
         self.fig.canvas.draw()
 
     def set_goal(self, x, y):
+        self.goal_coords['x'] = x
+        self.goal_coords['y'] = y
+        self.goal.set_data([self.goal_coords['x']], [self.goal_coords['y']])
+        self.fig.canvas.draw()
+
+    def set_obstacle(self, x, y):
+        # For group of points
+
+        self.ax.plot(x, y, marker='X', markersize=20, color='magenta', label='Obstacle')
+        self.nodes.discard((x, y))  # Remove the obstacle point from the set of nodes
+        self.fig.canvas.draw()
+
+    def update_robot(self, x, y):
+        self.point_coords['x'] = x
+        self.point_coords['y'] = y
+        self.point.set_data([self.point_coords['x']], [self.point_coords['y']])
+        self.fig.canvas.draw()
+
+    def update_block(self, x, y):
+        self.block_coords['x'] = x
+        self.block_coords['y'] = y
+        self.block.set_data([self.block_coords['x']], [self.block_coords['y']])
+        self.fig.canvas.draw()
+
+    def update_goal(self, x, y):
         self.goal_coords['x'] = x
         self.goal_coords['y'] = y
         self.goal.set_data([self.goal_coords['x']], [self.goal_coords['y']])
@@ -112,21 +137,37 @@ class RobotWorkspace:
     
     def on_key(self, event):
         
-        m = MarkerStyle('d') 
+        m = MarkerStyle('1')
         angle = 0
 
-        if event.key == 'up':
+        if event.key == 'u':
             self.point_coords['y'] += self.step
             angle = 0
-        elif event.key == 'down':
+        elif event.key == 'j':
             self.point_coords['y'] -= self.step
             angle = 180
-        elif event.key == 'left':
+        elif event.key == 'h':
             self.point_coords['x'] -= self.step
-            angle = 270
-        elif event.key == 'right':
+            angle = 90
+        elif event.key == 'k':
             self.point_coords['x'] += self.step
-            angle = 90 
+            angle = 270
+        elif event.key == 'y':
+            self.point_coords['x'] -= self.step
+            self.point_coords['y'] += self.step
+            angle = 45
+        elif event.key == 'i':
+            self.point_coords['x'] += self.step
+            self.point_coords['y'] += self.step
+            angle = 315
+        elif event.key == 'n':
+            self.point_coords['x'] -= self.step
+            self.point_coords['y'] -= self.step
+            angle = 135
+        elif event.key == 'm':
+            self.point_coords['x'] += self.step
+            self.point_coords['y'] -= self.step
+            angle = 225
         else:
             return 
 
@@ -138,11 +179,11 @@ class RobotWorkspace:
 
 if __name__ == "__main__":
     workspace = RobotWorkspace()
-    block_x, block_y = [22.5, 82.5]  # Setting block position (can be changed as needed)
-    goal_x, goal_y = [97.5, 97.5]   # Setting goal position (can be changed as needed)
+    block_x, block_y = [20, 80]  # Setting block position (can be changed as needed)
+    goal_x, goal_y = [90, 90]   # Setting goal position (can be changed as needed)
     workspace.set_block(block_x, block_y) # Place the block in the workspace
     workspace.set_goal(goal_x, goal_y)   # Place the goal in the workspace
-
+    workspace.set_obstacle([15, 25], [25, 30])  # Place an obstacle in the workspace
     # Find path from start to block, then from block to goal
     path = workspace.find_path((workspace.x0, workspace.y0), (block_x, block_y), workspace.path_block_line)
     path2 = workspace.find_path((block_x, block_y), (goal_x, goal_y), workspace.path_goal_line)
@@ -158,4 +199,6 @@ if __name__ == "__main__":
         print(f"{i+1+len(path):<6} | ({x:>5}, {y:>5})")
     plt.show()
     
+
+
 
