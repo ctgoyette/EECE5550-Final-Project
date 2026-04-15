@@ -23,29 +23,17 @@ ax.set_theta_direction(-1)      # Clockwise
 
 
 while True:
-    choice = input("Press Enter to take a measurement (or Ctrl+C to exit)...")
-    if choice.strip() == "":
-        for i in range(10000): # Take 360 measurements for a full scan
-            lidar.measure(lidar_ser)
-            if len(lidar.angles) > 300:
+    lidar.measure(lidar_ser)
+    if len(lidar.angles) > 150:
                 ax.clear()    
-                ax.scatter(lidar.angles, lidar.distances, s=10, c='red')
+                flipped_angles = [2 * np.pi - a for a in lidar.angles]
+                ax.scatter(flipped_angles, lidar.distances, s=10, c='red')
+                # ax.scatter(lidar.angles, lidar.distances, s=10, c='red')
                             
                 plt.pause(0.01) # Refresh the plot
                 
-                with open('output.csv', 'w', newline='') as file:
-                    fieldnames = ['Angle', 'Distance']
-                    writer = csv.DictWriter(file, fieldnames=fieldnames)
-
-                    writer.writeheader()  # Writes the first row as column names
-                    writer.writerows({'Angle': np.rad2deg(angle), 'Distance': dist} for angle, dist in zip(lidar.angles, lidar.distances))
-
+                
                 lidar.distances = []
-                lidar.angles = []
-
-    elif choice.strip().lower() == "exit":
-        lidar.stop(lidar_ser)
-        print("Exiting...")
-        break
+                lidar.angles = []  
     
 
