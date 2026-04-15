@@ -51,9 +51,10 @@ class LidarSensor:
                 dist = ((raw[3] << 8) | raw[2]) / 4.0
                 
                 if dist > 0 and dist < 1000: # Filter out invalid readings
-                    angle_rad = np.deg2rad(angle)
-                    self.angles.append(angle_rad)
-                    self.distances.append(dist)
+                    if angle > 180 and angle < 360:
+                        angle_rad = np.deg2rad(angle)
+                        self.angles.append(angle_rad)
+                        self.distances.append(dist)
             else:
                 # Not a start byte, discard and let the next loop iteration find the sync
                 pass
