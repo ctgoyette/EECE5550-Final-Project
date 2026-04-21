@@ -17,7 +17,7 @@ class RobotWorkspace:
         self.fig, self.ax = plt.subplots()
         
         self.ax.plot(self.X, self.Y, 's', markersize=10, label='Workspace Points', color='white')
-        m = MarkerStyle(marker='1')
+        m = MarkerStyle(marker='d')
         self.path_block_line, = self.ax.plot([], [], color='yellow', linestyle='--', linewidth=5)
         self.path_goal_line, = self.ax.plot([], [], color='yellow', linestyle='--', linewidth=5)
         self.point, = self.ax.plot(self.point_coords['x'], self.point_coords['y'], marker=m, markersize=40, color='red')
@@ -34,11 +34,12 @@ class RobotWorkspace:
         self.fig.canvas.mpl_connect('key_press_event', self.on_key)
     
     def initialize_workspace(self):
-        x_min, x_max = 0, 115
-        y_min, y_max = 0, 115
+        x_min, x_max = 0, 220
+        y_min, y_max = 0, 220
         
-        x = np.linspace(x_min, x_max, 24)
-        y = np.linspace(y_min, y_max, 24)
+        x = np.linspace(x_min, x_max, 23)
+        y = np.linspace(y_min, y_max, 23)
+        print(f"Workspace initialized: {x}, {y}")
         X, Y = np.meshgrid(x, y)
         x0, y0 = x[3], y[3]  
         
@@ -59,7 +60,7 @@ class RobotWorkspace:
     def set_obstacle(self, x, y):
         # For group of points
 
-        self.ax.plot(x, y, marker='X', markersize=20, color='magenta', label='Obstacle')
+        self.ax.plot(x, y, marker='X', markersize=15, color='orange', label='Obstacle')
         self.nodes.discard((x, y))  # Remove the obstacle point from the set of nodes
         self.fig.canvas.draw()
 
@@ -80,11 +81,60 @@ class RobotWorkspace:
         self.goal_coords['y'] = y
         self.goal.set_data([self.goal_coords['x']], [self.goal_coords['y']])
         self.fig.canvas.draw()
+
+    def get_obstacle_matrix(self):
+        # Get all points that are NOT in the traversable nodes set
+        all_pts = np.array(list(zip(self.X.flatten(), self.Y.flatten())))
+        # Filter for nodes you have 'discarded' or the boundary
+        is_obstacle = np.array([tuple(p) not in self.nodes for p in all_pts])
+        return all_pts[is_obstacle]
+    
+    def get_virtual_lidar_array(self, robot_x, robot_y, robot_theta):
+        obstacles = self.get_obstacle_matrix()
+        if len(obstacles) == 0:
+            return np.array([])
+
+        # 1. Vectorized translation
+        dx = obstacles[:, 0] - robot_x
+        dy = obstacles[:, 1] - robot_y
+        
+        # 2. Polar conversion
+        dist = np.sqrt(dx**2 + dy**2)
+        # Global angle of the obstacle relative to robot
+        angles = np.arctan2(dy, dx) - robot_theta
+        
+        # 3. Normalize to [-pi, pi]
+        angles = (angles + np.pi) % (2 * np.pi) - np.pi
+        
+        # 4. Filter for Front 180 degrees (-90 to +90 degrees)
+        mask = (angles >= -np.pi/2) & (angles <= np.pi/2)
+        
+        # Return as [angle, distance] sorted by angle
+        virtual_scan = np.column_stack((angles[mask], dist[mask]))
+        return virtual_scan[virtual_scan[:, 0].argsort()]
+    
+    def update_robot_icp(self, x, y, theta, actual_lidar_data):
+        # 1. Get what the robot SHOULD see based on the map
+        virtual_array = self.get_virtual_lidar_array(x, y, theta)
+        
+        # 2. Run ICP to find the offset between virtual and actual
+        # actual_lidar_data should also be filtered to 0-180
+        delta_x, delta_y, delta_theta = self.run_icp(actual_lidar_data, virtual_array)
+        
+        # 3. Apply the correction to the pose
+        corrected_x = x + delta_x
+        corrected_y = y + delta_y
+        
+        # 4. Update the visual marker
+        self.point_coords['x'] = corrected_x
+        self.point_coords['y'] = corrected_y
+        self.point.set_data([corrected_x], [corrected_y])
+        self.fig.canvas.draw_idle() # Use draw_idle for better performance
             
     def get_neighbors(self, node):
         x, y = node
         neighbors = []
-        directions = [(0, 5), (0, -5), (5, 0), (-5, 0), (5, 5), (5, -5), (-5, 5), (-5, -5)]
+        directions = [(0, 10), (0, -10), (10, 0), (-10, 0), (10, 10), (10, -10), (-10, 10), (-10, -10)]
         
         for dx, dy in directions:
             neighbor = (x + dx, y + dy)
@@ -179,26 +229,25 @@ class RobotWorkspace:
 
 if __name__ == "__main__":
     workspace = RobotWorkspace()
-    block_x, block_y = [20, 80]  # Setting block position (can be changed as needed)
-    goal_x, goal_y = [90, 90]   # Setting goal position (can be changed as needed)
+    block_x, block_y = [100, 200]  # Setting block position (can be changed as needed)
+    goal_x, goal_y = [200, 220]   # Setting goal position (can be changed as needed)
     workspace.set_block(block_x, block_y) # Place the block in the workspace
     workspace.set_goal(goal_x, goal_y)   # Place the goal in the workspace
-    workspace.set_obstacle([15, 25], [25, 30])  # Place an obstacle in the workspace
+    for x in range(50, 200, 10):
+        workspace.set_obstacle(200, x)  # Place a horizontal line of obstacles
+        workspace.set_obstacle(190, x)  # Place a horizontal line of obstacles
+        workspace.set_obstacle(210, x)  # Place a horizontal line of obstacles
+    
     # Find path from start to block, then from block to goal
     path = workspace.find_path((workspace.x0, workspace.y0), (block_x, block_y), workspace.path_block_line)
     path2 = workspace.find_path((block_x, block_y), (goal_x, goal_y), workspace.path_goal_line)
-    path2.pop(0)  # Remove the block position from the second path to avoid duplication
-    path.extend(path2)  # Combine paths for full route
+    # path2.pop(0)  # Remove the block position from the second path to avoid duplication
+    #path.extend(path2)  # Combine paths for full route
     # For Control, use the path variable which contains the list of coordinates from start to block and then block to goal
     # List of Positions from initial to block, then block to goal
-    print(f"{'Step':<6} | {'Coordinate':<15}")
-    print("-" * 25)
-    for i, (x, y) in enumerate(path):
-        print(f"{i+1:<6} | ({x:>5}, {y:>5})")
-    for i, (x, y) in enumerate(path2):
-        print(f"{i+1+len(path):<6} | ({x:>5}, {y:>5})")
+    print("Path from start to block:", path)
+    print("Path from block to goal:", path2)
     plt.show()
     
-
 
 
