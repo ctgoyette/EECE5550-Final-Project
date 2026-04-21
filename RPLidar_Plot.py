@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-PORT = 'COM7' # Set port connection from device manager
+PORT = '/dev/ttyUSB0' # Set port connection from device manager
 
 def start_lidar_plot():
     # Setup Serial Connection
