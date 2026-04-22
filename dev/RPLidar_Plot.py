@@ -12,8 +12,8 @@ def start_lidar_plot():
     ser.rts = False
     
     
-    plt.ion() # Interactive mode ON
-    fig = plt.figure(figsize=(8, 8))
+    # plt.ion() # Interactive mode ON
+    # fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111, projection='polar')
     ax.set_rmax(5000)
     ax.set_title("RPLidar A1M8 Live Map")
@@ -55,7 +55,7 @@ def start_lidar_plot():
                     
                     ax.scatter(angles, distances, s=5, c='red')
                     
-                    plt.pause(0.001) # Refresh the plot
+                    # plt.pause(0.001) # Refresh the plot
                     angles = []
                     distances = []
                     
