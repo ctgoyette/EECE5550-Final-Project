@@ -12,8 +12,8 @@ time.sleep(2)  # Give some time for the serial connection to stabilize
 lidar.start(lidar_ser)
 
 
-plt.ion() # Interactive mode ON
-fig = plt.figure(figsize=(8, 8))
+# plt.ion() # Interactive mode ON
+# fig = plt.figure(figsize=(8, 8))
 ax = fig.add_subplot(111, projection='polar')
 ax.set_rmax(5000)
 ax.set_title("RPLidar A1M8 Live Map")
@@ -30,7 +30,7 @@ while True:
                 ax.scatter(flipped_angles, lidar.distances, s=10, c='red')
                 # ax.scatter(lidar.angles, lidar.distances, s=10, c='red')
                             
-                plt.pause(0.01) # Refresh the plot
+                # plt.pause(0.01) # Refresh the plot
                 
                 
                 lidar.distances = []
