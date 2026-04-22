@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial import cKDTree
 class ICP_2D:
     def __init__(self, dmax = 15, num_ICP_iters = 30, tolerance=0.0001, min_points=3):
         self.dmax = float(dmax)
@@ -37,26 +38,41 @@ class ICP_2D:
         y = distances * np.sin(angles)
         return np.stack((x, y), axis=1)
 
-    def estimate_correspondences(self, X, Y, R, t):
-        # for each transformed point in X
-        # if the distance is less than dmax, find the closest point in Y and keep the pair 
+    # def estimate_correspondences(self, X, Y, R, t):
+    #     # for each transformed point in X
+    #     # if the distance is less than dmax, find the closest point in Y and keep the pair 
         
-        dmax = self.dmax
-        X_tf = self.transform_points(X, R, t) # X_tf=(X @ R.T + t)
-        correspondences = []
+    #     dmax = self.dmax
+    #     X_tf = self.transform_points(X, R, t) # X_tf=(X @ R.T + t)
+    #     correspondences = []
 
-        for i, x_i in enumerate(X_tf):
-            diff = Y - x_i
-            dist2 = np.sum(diff * diff, axis=1)
-            j = int(np.argmin(dist2))
-            if np.sqrt(dist2[j]) < dmax:
-                correspondences.append((i, j))
+    #     for i, x_i in enumerate(X_tf):
+    #         diff = Y - x_i
+    #         dist2 = np.sum(diff * diff, axis=1)
+    #         j = int(np.argmin(dist2))
+    #         if np.sqrt(dist2[j]) < dmax:
+    #             correspondences.append((i, j))
 
-        if not correspondences:
+    #     if not correspondences:
+    #         print('Fail in estimate_correspondences()')
+    #         return np.empty((0, 2), dtype=int)
+        
+    #     return np.asarray(correspondences, dtype=int)
+
+    def estimate_correspondences(self, X, Y, R, t):
+        X_tf = self.transform_points(X, R, t)
+        tree = cKDTree(Y)
+        dists, indices = tree.query(X_tf, k=1)
+        
+        mask = dists < self.dmax
+        i_indices = np.where(mask)[0]
+        j_indices = indices[mask]
+        
+        if len(i_indices) == 0:
             print('Fail in estimate_correspondences()')
             return np.empty((0, 2), dtype=int)
         
-        return np.asarray(correspondences, dtype=int)
+        return np.stack([i_indices, j_indices], axis=1).astype(int)
 
     def compute_optimal_rigid_registration(self, X, Y, C):
 

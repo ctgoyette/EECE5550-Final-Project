@@ -34,7 +34,6 @@ class RobotWorkspace:
         self.ax.grid(False)
         self.ax.axis('equal')
         fig_manager = plt.get_current_fig_manager()
-        fig_manager.window.setGeometry(0, 0, 750, 750)
         self.fig.canvas.mpl_connect('key_press_event', self.on_key)
     
     def initialize_workspace(self):

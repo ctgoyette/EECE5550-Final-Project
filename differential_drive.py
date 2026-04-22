@@ -2,12 +2,16 @@ import math
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
+import serial
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from RobotWorkspace import RobotWorkspace
 from pure_pursuit_package import Pose, PurePursuitTracker, wrap2pi
+from robot_pose import RobotPoseTracker
+from hw_drivers.dv_rplidar import RPLidarSensor
+
 
 
 
@@ -218,6 +222,53 @@ class PCDifferentialDriveExecutor:
             "right_vel": vr,
         }
         return new_pose, meas
+    
+
+import serial
+
+class SerialDifferentialDriveExecutor(PCDifferentialDriveExecutor):
+    """
+    Hardware executor: sends wheel velocities over serial,
+    reads back measurements from the motor controller.
+    """
+
+    def __init__(
+        self,
+        port: str = "/dev/ttyAMA3",   # or "COM3" on Windows
+        baud: int = 115200,
+        track_width_mm: float = 300,
+        timeout: float = 1.0,
+    ):
+        super().__init__(track_width_mm=track_width_mm)
+        self.ser = serial.Serial(port, baud, timeout=timeout)
+
+    def execute(self, pose: Pose, cmd: WheelCommand) -> Tuple[Pose, Dict]:
+        msg = f"{int(cmd.left_vel)} {int(cmd.right_vel)}\n"
+        self.ser.write(msg.encode())
+
+        # pose_exec will be overwritten by ICP anyway, so dead reckon minimally
+        v = 0.5 * (cmd.left_vel + cmd.right_vel)
+        omega = (cmd.right_vel - cmd.left_vel) / self.track_width_mm
+        distance = v * cmd.dt
+        theta = wrap2pi(pose.theta + omega * cmd.dt)
+        new_pose = Pose(
+            pose.x + distance * math.cos(theta),
+            pose.y + distance * math.sin(theta),
+            theta
+        )
+        meas = {
+            "theta_meas":        theta,
+            "distance_executed": distance,
+            "duration_s":        cmd.dt,
+            "v_exec":            v,
+            "omega_exec":        omega,
+            "left_vel":          cmd.left_vel,
+            "right_vel":         cmd.right_vel,
+        }
+        return new_pose, meas
+
+    def close(self):
+        self.ser.close()
 
 
 
@@ -272,7 +323,9 @@ def run_differential_drive_closed_loop(
     pose_exec = Pose(x=float(ws.x0), y=float(ws.y0), theta=0)
 
     tracker = PurePursuitTracker(path1, lookahead_phase1)
-    executor = PCDifferentialDriveExecutor(track_width_mm=track_width_mm)
+    executor = SerialDifferentialDriveExecutor(track_width_mm=track_width_mm)
+    pose_tracker = RobotPoseTracker()
+    lidar = RPLidarSensor(18, '/dev/ttyAMA0')
 
     phase = 1
     picked_up = False
@@ -301,7 +354,11 @@ def run_differential_drive_closed_loop(
 
             new_pose_exec, meas = executor.execute(pose_exec, wheel_cmd)
             pose_exec = new_pose_exec
-            pose_est = update_pose_estimate_from_measurement(pose_est, wheel_cmd, meas)
+
+            lidar.flush()
+            raw_scan = lidar.read_scan_frame()  # however you read your RPLidar
+            x, y, theta = pose_tracker.update_pose_incremental(raw_scan)
+            pose_est = Pose(x, y, theta)
 
             debug = {
                 "event": "pickup_pause",
@@ -333,7 +390,11 @@ def run_differential_drive_closed_loop(
 
             new_pose_exec, meas = executor.execute(pose_exec, wheel_cmd)
             pose_exec = new_pose_exec
-            pose_est = update_pose_estimate_from_measurement(pose_est, wheel_cmd, meas)
+
+            lidar.flush()
+            raw_scan = lidar.read_scan_frame()
+            x, y, theta = pose_tracker.update_pose_incremental(raw_scan)
+            pose_est = Pose(x, y, theta)
 
         if enable_workspace_update:
             try:
