@@ -13,8 +13,8 @@ mlp = joblib.load("mlp_model.pkl")
 sc = joblib.load("scaler.pkl")
 block_class_idx = list(mlp.classes_).index(1)
 
-plt.ion()
-fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(8, 8))
+# plt.ion()
+# fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(8, 8))
 ax.set_rmax(5000)
 ax.set_title("RPLidar A1M8 Live Map")
 ax.set_theta_zero_location('N')
@@ -47,7 +47,7 @@ while True:
     ax.clear()
     ax.scatter(2 * np.pi - angles, distances, s=10, c='red')
     ax.plot(2 * np.pi - np.radians(block_angle), ax.get_rmax(), 'go', markersize=15)
-    plt.pause(0.01)
+    # plt.pause(0.01)
 
     lidar.distances = []
     lidar.angles = []
